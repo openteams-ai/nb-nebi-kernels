@@ -10,6 +10,7 @@ A custom Jupyter `KernelSpecManager` that automatically discovers local and remo
 4. Enumerates environments per workspace (`pixi info --json` for local workspaces, remote `pixi.toml` parsing for remote-only workspaces).
 5. Classifies each kernel into a structured state (`ready`, `outdated`, `remote-not-pulled`, `local-not-installed`, `local-missing-deps`).
 6. Launches each installed kernelspec's own command via `pixi run --frozen` with environment isolation.
+7. Provides `POST /nb-nebi-kernels/kernels/refresh` for consumers to invalidate the discovery cache after Nebi workspace changes.
 
 ## Installation
 
@@ -58,6 +59,17 @@ c.NebiKernelSpecManager.required_launch_dependencies = ["optional-extra-package"
 
 - `workspace_discovery_roots` adds local discovery roots (in addition to `nebi workspace list` results).
 - `required_launch_dependencies` optionally adds package checks beyond the installed Jupyter kernelspec. Default: `[]`.
+- `discovery_cache_ttl_seconds` controls how long discovery results are cached. Default: `30`.
+
+### Refresh endpoint
+
+Clients that install, pull, or otherwise change Nebi workspaces can make an authenticated Jupyter Server request to refresh kernelspec discovery:
+
+```text
+POST /nb-nebi-kernels/kernels/refresh
+```
+
+The endpoint invalidates the `NebiKernelSpecManager` discovery cache, so the next kernelspec request recomputes available Nebi kernels immediately.
 
 ## Kernel states and metadata
 
@@ -120,12 +132,14 @@ src/nb_nebi_kernels/
 ├── __init__.py      # Exports NebiKernelSpecManager
 ├── discovery.py     # Local/remote workspace discovery + environment probing
 ├── launcher.py      # Kernel launcher with state-aware launch blocking
-└── manager.py       # KernelSpecManager subclass (core logic)
+├── manager.py       # KernelSpecManager subclass (core logic)
+└── server_extension.py # Jupyter Server endpoint for discovery cache refresh
 ```
 
 - **discovery.py** — Parses local `nebi workspace list --json`, optionally discovers remote workspaces through the Nebi API, resolves environment names, and probes local env install/dependency health.
 - **launcher.py** — Clears `PIXI_*` environment variables, blocks non-launchable states with actionable stderr messages, then execs `pixi run` in the workspace directory.
 - **manager.py** — Subclasses `KernelSpecManager`, merges local and remote workspace views, classifies per-kernel state, and emits structured kernelspec metadata.
+- **server_extension.py** — Registers the authenticated kernel discovery cache refresh endpoint.
 
 ## License
 
